@@ -1,111 +1,146 @@
 # NexPerf
 
-> Next-generation local system intelligence platform for monitoring, explainability, and security insights.
+NexPerf is a local-first system intelligence and performance monitoring tool for developers. It pairs a CLI-first workflow with a local dashboard served by the app.
 
-NexPerf is a local-first system intelligence platform designed for developers, power users, and security-conscious users.
+v0.1 focuses on the essentials: inspect the machine from the terminal, expose a small local API, and view current system health at `http://127.0.0.1:8756/nexperf`.
 
-Unlike traditional monitoring tools that only display raw metrics, NexPerf focuses on explainability, actionable insights, and system behavior understanding.
+## Philosophy
 
-NexPerf combines:
+NexPerf is built for local trust and useful explanations:
 
-- system monitoring
-- process intelligence
-- network visibility
-- security insights
-- explainable diagnostics
-- developer-focused telemetry
+- Local-first by default
+- Fast terminal inspection before dashboard polish
+- Human-readable diagnostics alongside raw metrics
+- Clean boundaries between collectors, CLI, API, and UI
+- Prepared for future privileged diagnostics without enabling them in v0.1
 
-into a clean local dashboard experience.
+## CLI
 
----
+The binary is named `nexperf`.
 
-# Philosophy
+```sh
+go run ./cmd/nexperf start
+go run ./cmd/nexperf status
+go run ./cmd/nexperf processes
+go run ./cmd/nexperf inspect
+go run ./cmd/nexperf explain memory
+go run ./cmd/nexperf explain cpu
+go run ./cmd/nexperf explain disk
+go run ./cmd/nexperf open
+go run ./cmd/nexperf version
+```
 
-Modern monitoring tools often overwhelm users with metrics while providing very little understanding.
+Global flags:
 
-NexPerf aims to bridge that gap by focusing on:
-
-- Human-readable insights
-- Explainable diagnostics
-- Local-first privacy
-- Developer-centric workflows
-- Beautiful observability experiences
-
----
-
-# Features
-
-## System Monitoring
-
-- CPU, memory, disk, and network monitoring
-- Real-time process insights
-- Resource usage timelines
-- Storage intelligence
-- Process lifecycle visibility
-
----
-
-## Explainable Insights
-
-NexPerf focuses on helping users understand *why* something is happening instead of only showing charts and metrics.
+```sh
+--host        Server host, default 127.0.0.1
+--port        Server port, default 8756
+--json        JSON output for supported commands
+--privileged  Placeholder for planned privileged diagnostics
+```
 
 Examples:
 
-- Memory pressure increased after Docker containers started
-- Chrome tabs contribute 42% of active memory usage
-- Downloads folder increased by 5GB in the last 24 hours
-- New background process detected after recent application install
+```sh
+go run ./cmd/nexperf --json status
+go run ./cmd/nexperf --port 9000 start
+```
 
----
+## API
 
-## Network Intelligence
+Start the local server:
 
-- Active connections
-- Open ports
-- Process-to-network mapping
-- Outbound activity monitoring
-- Local service visibility
+```sh
+go run ./cmd/nexperf start
+```
 
----
+Endpoints:
 
-## Security Visibility
+- `GET /api/system`
+- `GET /api/processes/top`
+- `GET /api/insights`
+- `GET /api/health`
+- `GET /nexperf`
 
-- Suspicious outbound activity
-- Startup/service visibility
-- Privileged-mode diagnostics
-- Local security insights
-- System behavior anomaly tracking
+`/api/system` returns CPU usage, memory usage, disk usage, OS, architecture, hostname when available, and timestamp.
 
----
+`/api/processes/top` returns top processes by memory usage with PID, name, memory MB, CPU percent when available, and user when available.
 
-## Developer Experience
+`/api/insights` returns rule-based insight objects with `id`, `severity`, `title`, `message`, and `recommendation`.
 
-- Local-first architecture
-- Clean dashboard UI
-- CLI utilities
-- Man-style contextual explanations
-- Developer-focused diagnostics
+## Dashboard
 
----
+The dashboard source lives in `web/` and uses Vue 3 + Vite.
 
-# Philosophy of Privacy
+For v0.1 development:
 
-NexPerf is designed as a local-first platform.
+```sh
+cd web
+npm install
+npm run dev
+```
 
-By default:
+The Go server also serves a lightweight dashboard at `/nexperf` today. The project is structured so a future Vue production build can be embedded into the Go binary.
 
-- No telemetry is sent externally
-- No cloud account is required
-- No monitoring data leaves the machine
-- All analysis happens locally
+## Development
 
-Users remain fully in control of their data.
+Requirements:
 
----
+- Go 1.22+
+- Node.js 20+ for dashboard development
 
-# Architecture
+Run CLI checks:
 
-NexPerf follows a local-first architecture:
+```sh
+go run ./cmd/nexperf status
+go run ./cmd/nexperf processes
+go run ./cmd/nexperf inspect
+```
+
+Run the local app:
+
+```sh
+go run ./cmd/nexperf start
+```
+
+Then open:
 
 ```txt
-System Collectors → Insight Engine → Local API → Dashboard UI
+http://127.0.0.1:8756/nexperf
+```
+
+## Architecture
+
+```txt
+cmd/nexperf        CLI entrypoint
+internal/cli      command handling and terminal formatting
+internal/collector reusable system and process collectors
+internal/insight  rule-based local insights
+internal/server   local API server and dashboard route
+internal/platform OS-specific helpers
+internal/version  build version metadata
+web/              Vue 3 dashboard source
+docs/             project notes
+```
+
+NexPerf uses `github.com/shirou/gopsutil/v4` for v0.1 metrics because it is widely used, cross-platform, and avoids fragile OS-specific shell parsing for CPU, memory, disk, host, and process data.
+
+## Roadmap
+
+- Embed the production Vue build into the Go binary
+- Add SQLite-backed history and snapshots
+- Add charts and process trend views
+- Add network and local service visibility
+- Add macOS/Linux privileged diagnostics behind explicit user consent
+- Add Homebrew packaging
+
+## Future Homebrew Plan
+
+The intended install flow is:
+
+```sh
+brew install nexperf
+nexperf start
+```
+
+Before publishing, NexPerf will need release builds, checksums, a formula, and a stable tap or upstream Homebrew submission.

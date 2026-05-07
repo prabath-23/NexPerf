@@ -1,0 +1,15 @@
+.DS_Store
+bin/
+dist/
+coverage/
+*.log
+
+# Go
+*.test
+/nexperf
+.gocache/
+.gomodcache/
+
+# Node
+web/node_modules/
+web/dist/
