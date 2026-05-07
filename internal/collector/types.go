@@ -30,4 +30,5 @@ type ProcessInfo struct {
 	MemoryMB   float64 `json:"memory_mb"`
 	CPUPercent float64 `json:"cpu_percent,omitempty"`
 	User       string  `json:"user,omitempty"`
+	Category   string  `json:"category"`
 }

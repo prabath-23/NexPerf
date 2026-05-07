@@ -1,17 +1,25 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/prabath/nexperf/internal/collector"
 	"github.com/prabath/nexperf/internal/insight"
+	"github.com/prabath/nexperf/internal/monitor"
 	"github.com/prabath/nexperf/internal/platform"
 	"github.com/prabath/nexperf/internal/server"
+	"github.com/prabath/nexperf/internal/service"
+	"github.com/prabath/nexperf/internal/storage"
 	"github.com/prabath/nexperf/internal/version"
 )
 
@@ -33,7 +41,7 @@ func Run(args []string) int {
 	}
 
 	if opts.privileged {
-		fmt.Fprintln(opts.out, "Privileged diagnostics are planned for a future NexPerf release; v0.1 runs in local user mode.")
+		fmt.Fprintln(opts.out, "Privileged diagnostics are planned for a future NexPerf release; v0.2 runs in local user mode.")
 	}
 
 	if len(remaining) == 0 {
@@ -94,6 +102,10 @@ func runCommand(cmd string, args []string, opts options) error {
 	switch cmd {
 	case "start":
 		return start(opts)
+	case "serve":
+		return serve(opts)
+	case "stop":
+		return stop(opts)
 	case "status":
 		return status(opts)
 	case "processes":
@@ -115,10 +127,77 @@ func runCommand(cmd string, args []string, opts options) error {
 }
 
 func start(opts options) error {
-	url := dashboardURL(opts)
-	fmt.Fprintf(opts.out, "NexPerf server listening on http://%s:%d\n", opts.host, opts.port)
-	fmt.Fprintf(opts.out, "Dashboard: %s\n", url)
-	return server.New().ListenAndServe(opts.host, opts.port)
+	cfg := service.Config{Host: opts.host, Port: opts.port}
+	if service.IsServerRunning(cfg) {
+		fmt.Fprintln(opts.out, "NexPerf is already running")
+		fmt.Fprintf(opts.out, "Dashboard: %s\n", service.DashboardURL(cfg))
+		return nil
+	}
+
+	fmt.Fprintln(opts.out, "Starting NexPerf...")
+	if err := service.StartBackgroundServer(cfg); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	if err := service.WaitForServerReady(ctx, cfg); err != nil {
+		return fmt.Errorf("service did not become ready: %w", err)
+	}
+	fmt.Fprintf(opts.out, "API server listening on %s:%d\n", opts.host, opts.port)
+	fmt.Fprintln(opts.out, "Historical metrics collection enabled")
+	fmt.Fprintln(opts.out, "NexPerf is running")
+	fmt.Fprintf(opts.out, "Dashboard: %s\n", service.DashboardURL(cfg))
+	return nil
+}
+
+func serve(opts options) error {
+	paths, err := service.DefaultPaths()
+	if err != nil {
+		return err
+	}
+	if err := paths.Ensure(); err != nil {
+		return err
+	}
+
+	store, err := storage.Open(paths.DB)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
+	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+
+	logger := log.New(opts.err, "nexperf: ", log.LstdFlags)
+	collector := monitor.New(store, logger)
+	go collector.Run(ctx)
+
+	srv := server.New(store)
+	errCh := make(chan error, 1)
+	go func() {
+		fmt.Fprintf(opts.out, "NexPerf service listening on http://%s:%d\n", opts.host, opts.port)
+		fmt.Fprintln(opts.out, "Historical metrics collection enabled")
+		errCh <- srv.ListenAndServe(opts.host, opts.port)
+	}()
+
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return srv.Shutdown(shutdownCtx)
+	case err := <-errCh:
+		return err
+	}
+}
+
+func stop(opts options) error {
+	cfg := service.Config{Host: opts.host, Port: opts.port}
+	fmt.Fprintln(opts.out, "Stopping NexPerf...")
+	if err := service.StopBackgroundServer(cfg); err != nil {
+		return err
+	}
+	fmt.Fprintln(opts.out, "NexPerf stopped successfully")
+	return nil
 }
 
 func status(opts options) error {
@@ -160,7 +239,8 @@ func inspect(opts options) error {
 	if err != nil {
 		return err
 	}
-	insights := insight.Generate(system)
+	processes, _ := collector.TopProcesses(12)
+	insights := insight.GenerateContextual(system, processes, nil)
 	if opts.jsonOutput {
 		return writeJSON(opts.out, insights)
 	}
@@ -195,8 +275,24 @@ func explain(args []string, opts options) error {
 }
 
 func open(opts options) error {
-	url := dashboardURL(opts)
-	fmt.Fprintf(opts.out, "Opening %s\n", url)
+	cfg := service.Config{Host: opts.host, Port: opts.port}
+	if service.IsServerRunning(cfg) {
+		fmt.Fprintln(opts.out, "NexPerf service detected.")
+	} else {
+		fmt.Fprintln(opts.out, "NexPerf service not running.")
+		fmt.Fprintln(opts.out, "Starting NexPerf...")
+		if err := service.StartBackgroundServer(cfg); err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		if err := service.WaitForServerReady(ctx, cfg); err != nil {
+			return fmt.Errorf("service did not become ready: %w", err)
+		}
+		fmt.Fprintln(opts.out, "Service ready.")
+	}
+	fmt.Fprintln(opts.out, "Opening dashboard...")
+	url := service.DashboardURL(cfg)
 	return platform.OpenBrowser(url)
 }
 
@@ -238,7 +334,7 @@ func explanation(topic string, system collector.SystemSummary) map[string]string
 }
 
 func dashboardURL(opts options) string {
-	return fmt.Sprintf("http://%s:%d/nexperf", opts.host, opts.port)
+	return service.DashboardURL(service.Config{Host: opts.host, Port: opts.port})
 }
 
 func writeJSON(w io.Writer, value any) error {
@@ -256,13 +352,14 @@ func formatBytes(bytes uint64) string {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprintln(w, `NexPerf v0.1
+	fmt.Fprintln(w, `NexPerf v0.2.0
 
 Usage:
   nexperf [--host 127.0.0.1] [--port 8756] [--json] [--privileged] <command>
 
 Commands:
-  start              Start the local API server and dashboard
+  start              Start the local monitoring service
+  stop               Stop the local monitoring service
   status             Print current system summary
   processes          List top processes by memory usage
   inspect            Print rule-based system inspection

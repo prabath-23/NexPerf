@@ -1,0 +1,21 @@
+<svg width="160" height="120" viewBox="0 0 160 120" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">NexPerf thunder N</title>
+  <desc id="desc">A futuristic letter N shaped like a lightning bolt.</desc>
+  <path d="M12 108L72 16L93 59L148 8L91 104L75 61L12 108Z" fill="url(#bolt)" stroke="url(#edge)" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M72 16L93 59L148 8L91 104L75 61L12 108L78 51L88 78L127 27L88 70L72 16Z" fill="url(#shine)" opacity="0.64"/>
+  <defs>
+    <linearGradient id="bolt" x1="22" y1="100" x2="136" y2="12" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0A49FF"/>
+      <stop offset="0.45" stop-color="#0A9BFF"/>
+      <stop offset="1" stop-color="#9CFBFF"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="31" y1="102" x2="132" y2="8" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#052BFF"/>
+      <stop offset="1" stop-color="#C7FFFF"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="70" y1="17" x2="104" y2="84" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+</svg>

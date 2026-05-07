@@ -1,0 +1,21 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="64" height="64" rx="15" fill="url(#bg)"/>
+  <path d="M8 57L30 9L39 32L59 5L38 59L31 36L8 57Z" fill="url(#bolt)" stroke="url(#edge)" stroke-width="2.4" stroke-linejoin="round"/>
+  <path d="M30 9L39 32L59 5L38 59L31 36L8 57L34 29L37 43L50 17L37 37L30 9Z" fill="#FFFFFF" opacity="0.38"/>
+  <defs>
+    <linearGradient id="bg" x1="4" y1="3" x2="61" y2="64" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#020617"/>
+      <stop offset="0.54" stop-color="#061339"/>
+      <stop offset="1" stop-color="#092447"/>
+    </linearGradient>
+    <linearGradient id="bolt" x1="10" y1="55" x2="56" y2="7" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0A49FF"/>
+      <stop offset="0.48" stop-color="#0A9BFF"/>
+      <stop offset="1" stop-color="#9CFBFF"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="10" y1="55" x2="57" y2="4" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0534FF"/>
+      <stop offset="1" stop-color="#D6FFFF"/>
+    </linearGradient>
+  </defs>
+</svg>
