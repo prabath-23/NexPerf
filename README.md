@@ -1,33 +1,75 @@
 # NexPerf
 
-NexPerf is a local-first system intelligence and performance monitoring tool for developers. It pairs a CLI-first workflow with a local dashboard served by the app.
+NexPerf is a local-first observability and system intelligence tool for developer machines. It provides a CLI-first workflow, a local Go API service, SQLite-backed historical metrics, and a Vue dashboard served at `http://127.0.0.1:8756/nexperf`.
 
-v0.1 focuses on the essentials: inspect the machine from the terminal, expose a small local API, and view current system health at `http://127.0.0.1:8756/nexperf`.
+v0.2.0 turns the prototype dashboard into the foundation of a real local monitoring service.
 
 ## Philosophy
 
-NexPerf is built for local trust and useful explanations:
+- Local-first system visibility with no cloud account
+- Terminal workflows before dashboard ceremony
+- Observability UX over toy charts
+- Reusable collectors, insight rules, APIs, and frontend components
+- A path toward privileged diagnostics without enabling them by default
 
-- Local-first by default
-- Fast terminal inspection before dashboard polish
-- Human-readable diagnostics alongside raw metrics
-- Clean boundaries between collectors, CLI, API, and UI
-- Prepared for future privileged diagnostics without enabling them in v0.1
+## Architecture
+
+```txt
+Collectors
+    ↓
+Insight Engine
+    ↓
+SQLite Historical Storage
+    ↓
+Go HTTP API Server
+    ↓
+Vue Observability Dashboard
+```
+
+Project layout:
+
+```txt
+cmd/nexperf         CLI entrypoint
+internal/cli       command routing and terminal output
+internal/service   lifecycle helpers and background service controls
+internal/collector system and process collectors
+internal/monitor   5-second historical collection loop
+internal/storage   SQLite persistence
+internal/insight   rule-based contextual insights
+internal/server    local API and Vue asset serving
+internal/platform  OS-specific helpers
+web/               Vue 3 dashboard
+docs/              release notes and design notes
+```
+
+NexPerf currently uses `github.com/shirou/gopsutil/v4` for cross-platform CPU, memory, disk, host, and process metrics. SQLite is provided by `modernc.org/sqlite`, which keeps local persistence self-contained for development and future packaging.
 
 ## CLI
 
-The binary is named `nexperf`.
+Build the local binary:
 
 ```sh
-go run ./cmd/nexperf start
-go run ./cmd/nexperf status
-go run ./cmd/nexperf processes
-go run ./cmd/nexperf inspect
-go run ./cmd/nexperf explain memory
-go run ./cmd/nexperf explain cpu
-go run ./cmd/nexperf explain disk
-go run ./cmd/nexperf open
-go run ./cmd/nexperf version
+go build -o bin/nexperf ./cmd/nexperf
+```
+
+Run the service lifecycle:
+
+```sh
+nexperf start
+nexperf open
+nexperf stop
+```
+
+Inspection commands:
+
+```sh
+nexperf status
+nexperf processes
+nexperf inspect
+nexperf explain memory
+nexperf explain cpu
+nexperf explain disk
+nexperf version
 ```
 
 Global flags:
@@ -42,97 +84,137 @@ Global flags:
 Examples:
 
 ```sh
-go run ./cmd/nexperf --json status
-go run ./cmd/nexperf --port 9000 start
+nexperf --json status
+nexperf --port 9000 start
+nexperf --port 9000 stop
 ```
+
+## Service Lifecycle
+
+`nexperf start` launches a background local monitoring service, starts the HTTP API, and enables historical metric collection every 5 seconds.
+
+Service state is stored under:
+
+```txt
+~/.nexperf/nexperf.pid
+~/.nexperf/nexperf.log
+~/.nexperf/nexperf.db
+```
+
+`nexperf open` checks `/api/health`. If the service is offline, it starts NexPerf, waits for readiness, and opens the dashboard.
 
 ## API
 
-Start the local server:
+Start the service:
 
 ```sh
-go run ./cmd/nexperf start
+nexperf start
 ```
 
 Endpoints:
 
+- `GET /api/health`
 - `GET /api/system`
 - `GET /api/processes/top`
 - `GET /api/insights`
-- `GET /api/health`
+- `GET /api/history/cpu`
+- `GET /api/history/memory`
+- `GET /api/history/disk`
 - `GET /nexperf`
 
-`/api/system` returns CPU usage, memory usage, disk usage, OS, architecture, hostname when available, and timestamp.
+Example:
 
-`/api/processes/top` returns top processes by memory usage with PID, name, memory MB, CPU percent when available, and user when available.
-
-`/api/insights` returns rule-based insight objects with `id`, `severity`, `title`, `message`, and `recommendation`.
+```sh
+curl http://127.0.0.1:8756/api/system
+curl http://127.0.0.1:8756/api/history/cpu
+```
 
 ## Dashboard
 
-The dashboard source lives in `web/` and uses Vue 3 + Vite.
+Vue is the primary dashboard. Go owns APIs and serves the production Vue build from `web/dist` at `/nexperf`.
 
-For v0.1 development:
+The dashboard includes:
 
-```sh
-cd web
-npm install
-npm run dev
+- live CPU, memory, and disk cards
+- historical sparklines
+- CPU, memory, and disk timeline charts
+- process search, sorting, live updates, and CPU highlighting
+- categorized insights with timestamps and recommendations
+- live badge, polling state, and last updated time
+
+The frontend component system lives under:
+
+```txt
+web/src/components/ui
+web/src/components/charts
+web/src/components/metrics
+web/src/components/processes
+web/src/components/insights
+web/src/components/layout
+web/src/views
+web/src/composables
+web/src/services
+web/src/stores
 ```
 
-The Go server also serves a lightweight dashboard at `/nexperf` today. The project is structured so a future Vue production build can be embedded into the Go binary.
+## Development Workflow
 
-## Development
-
-Requirements:
-
-- Go 1.22+
-- Node.js 20+ for dashboard development
-
-Run CLI checks:
+Run the backend:
 
 ```sh
-go run ./cmd/nexperf status
-go run ./cmd/nexperf processes
-go run ./cmd/nexperf inspect
+go run ./cmd/nexperf --port 8756 serve
 ```
 
-Run the local app:
+Run the Vue dev server:
 
 ```sh
-go run ./cmd/nexperf start
+npm --prefix web install
+npm --prefix web run dev
 ```
 
-Then open:
+Vite proxies `/api` to `http://127.0.0.1:8756`.
+
+## Production Workflow
+
+Build Vue:
+
+```sh
+npm --prefix web run build
+```
+
+Build NexPerf:
+
+```sh
+go build -o bin/nexperf ./cmd/nexperf
+```
+
+Run:
+
+```sh
+bin/nexperf start
+open http://127.0.0.1:8756/nexperf
+```
+
+If `web/dist` is missing, Go serves a small fallback status page instead of duplicating the dashboard.
+
+## Screenshots
+
+Screenshots are not checked into v0.2.0 yet. After starting NexPerf, capture the local dashboard at:
 
 ```txt
 http://127.0.0.1:8756/nexperf
 ```
 
-## Architecture
-
-```txt
-cmd/nexperf        CLI entrypoint
-internal/cli      command handling and terminal formatting
-internal/collector reusable system and process collectors
-internal/insight  rule-based local insights
-internal/server   local API server and dashboard route
-internal/platform OS-specific helpers
-internal/version  build version metadata
-web/              Vue 3 dashboard source
-docs/             project notes
-```
-
-NexPerf uses `github.com/shirou/gopsutil/v4` for v0.1 metrics because it is widely used, cross-platform, and avoids fragile OS-specific shell parsing for CPU, memory, disk, host, and process data.
-
 ## Roadmap
 
-- Embed the production Vue build into the Go binary
-- Add SQLite-backed history and snapshots
-- Add charts and process trend views
-- Add network and local service visibility
-- Add macOS/Linux privileged diagnostics behind explicit user consent
-- Add Homebrew packaging
+- Embed Vue assets into the Go binary
+- Add richer process diagnostics
+- Add network, ports, and local service visibility
+- Add swap and scheduling explainers
+- Add anomaly detection over historical data
+- Add explicit privileged diagnostics mode
+- Add Homebrew release packaging
+- Expand reusable observability components
 
 ## Future Homebrew Plan
 
@@ -141,6 +223,7 @@ The intended install flow is:
 ```sh
 brew install nexperf
 nexperf start
+nexperf open
 ```
 
-Before publishing, NexPerf will need release builds, checksums, a formula, and a stable tap or upstream Homebrew submission.
+Before publishing, NexPerf needs signed release builds, checksums, a formula, and a stable tap or upstream Homebrew submission.
