@@ -14,12 +14,14 @@ import (
 	"time"
 
 	"github.com/prabath/nexperf/internal/collector"
+	"github.com/prabath/nexperf/internal/config"
 	"github.com/prabath/nexperf/internal/insight"
 	"github.com/prabath/nexperf/internal/monitor"
 	"github.com/prabath/nexperf/internal/platform"
 	"github.com/prabath/nexperf/internal/server"
 	"github.com/prabath/nexperf/internal/service"
 	"github.com/prabath/nexperf/internal/storage"
+	"github.com/prabath/nexperf/internal/storageintel"
 	"github.com/prabath/nexperf/internal/version"
 )
 
@@ -41,7 +43,7 @@ func Run(args []string) int {
 	}
 
 	if opts.privileged {
-		fmt.Fprintln(opts.out, "Privileged diagnostics are planned for a future NexPerf release; v0.2 runs in local user mode.")
+		fmt.Fprintln(opts.out, "Privileged diagnostics are planned for a future NexPerf release; v0.3 runs in local user mode.")
 	}
 
 	if len(remaining) == 0 {
@@ -114,6 +116,8 @@ func runCommand(cmd string, args []string, opts options) error {
 		return inspect(opts)
 	case "explain":
 		return explain(args, opts)
+	case "manual", "man":
+		return manual(args, opts)
 	case "open":
 		return open(opts)
 	case "version":
@@ -124,6 +128,30 @@ func runCommand(cmd string, args []string, opts options) error {
 	default:
 		return fmt.Errorf("unknown command %q", cmd)
 	}
+}
+
+func manual(args []string, opts options) error {
+	topic := "storage"
+	if len(args) > 0 {
+		topic = args[0]
+	}
+	if topic != "storage" && topic != "directories" {
+		return fmt.Errorf("manual topic %q is not available yet", topic)
+	}
+	entries := []string{"/", "/Users", "/home", "/Applications", "/Library", "/System", "/private", "/var", "/usr", "/opt", "/tmp", "Downloads", "Caches", "node_modules", "DerivedData", "Docker"}
+	if opts.jsonOutput {
+		out := map[string]map[string]string{}
+		for _, path := range entries {
+			out[path] = map[string]string{"description": storageintel.Describe(path)}
+		}
+		return writeJSON(opts.out, out)
+	}
+	fmt.Fprintln(opts.out, "NexPerf storage directory manual")
+	fmt.Fprintln(opts.out)
+	for _, path := range entries {
+		fmt.Fprintf(opts.out, "%-14s %s\n", path, storageintel.Describe(path))
+	}
+	return nil
 }
 
 func start(opts options) error {
@@ -164,15 +192,21 @@ func serve(opts options) error {
 		return err
 	}
 	defer store.Close()
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	store.SetRetentionHours(cfg.RetentionHours)
 
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
 	logger := log.New(opts.err, "nexperf: ", log.LstdFlags)
 	collector := monitor.New(store, logger)
+	collector.SetInterval(config.PollingInterval(cfg))
 	go collector.Run(ctx)
 
-	srv := server.New(store)
+	srv := server.NewWithConfig(store, cfg, paths.DB)
 	errCh := make(chan error, 1)
 	go func() {
 		fmt.Fprintf(opts.out, "NexPerf service listening on http://%s:%d\n", opts.host, opts.port)
@@ -254,7 +288,7 @@ func inspect(opts options) error {
 
 func explain(args []string, opts options) error {
 	if len(args) == 0 {
-		return fmt.Errorf("explain requires one of: memory, cpu, disk")
+		return fmt.Errorf("explain requires one of: memory, cpu, disk, storage, processes")
 	}
 	system, err := collector.CollectSystem()
 	if err != nil {
@@ -328,6 +362,25 @@ func explanation(topic string, system collector.SystemSummary) map[string]string
 			"message": "Disk usage shows how much capacity is consumed on the root filesystem. Very full disks can break updates, logs, databases, and development caches.",
 			"current": fmt.Sprintf("%.1f%% (%s / %s)", system.Disk.Percent, formatBytes(system.Disk.Used), formatBytes(system.Disk.Total)),
 		}
+	case "storage":
+		return map[string]string{
+			"topic":   "storage",
+			"title":   "Storage intelligence",
+			"message": "Storage intelligence looks beyond disk percentage by identifying large directories, caches, generated files, downloads, logs, local databases, and application data that affect workstation headroom.",
+			"current": fmt.Sprintf("Root disk %.1f%% full (%s / %s)", system.Disk.Percent, formatBytes(system.Disk.Used), formatBytes(system.Disk.Total)),
+		}
+	case "processes":
+		processes, _ := collector.TopProcesses(5)
+		summary := "No process data available"
+		if len(processes) > 0 {
+			summary = fmt.Sprintf("Top process: %s using %.1fMB memory and %.1f%% CPU", processes[0].Name, processes[0].MemoryMB, processes[0].CPUPercent)
+		}
+		return map[string]string{
+			"topic":   "processes",
+			"title":   "Process intelligence",
+			"message": "Process intelligence groups workloads by category, watches memory and CPU pressure, and highlights browsers, IDEs, containers, terminals, services, and system processes that shape local performance.",
+			"current": summary,
+		}
 	default:
 		return nil
 	}
@@ -352,7 +405,7 @@ func formatBytes(bytes uint64) string {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprintln(w, `NexPerf v0.2.0
+	fmt.Fprintln(w, `NexPerf v0.3.0
 
 Usage:
   nexperf [--host 127.0.0.1] [--port 8756] [--json] [--privileged] <command>
@@ -363,7 +416,8 @@ Commands:
   status             Print current system summary
   processes          List top processes by memory usage
   inspect            Print rule-based system inspection
-  explain <topic>    Explain memory, cpu, or disk usage
+  explain <topic>    Explain cpu, memory, disk, storage, or processes
+  manual storage     Print a local directory guide
   open               Open the dashboard URL in a browser
   version            Print version information`)
 }

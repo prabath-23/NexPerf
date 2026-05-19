@@ -1,6 +1,5 @@
 <script setup>
 import SparklineChart from '../charts/SparklineChart.vue'
-import StatusBadge from '../ui/StatusBadge.vue'
 
 defineProps({
   label: { type: String, required: true },
@@ -17,7 +16,7 @@ defineProps({
   <article class="metric-card" :class="severity">
     <div class="metric-topline">
       <span>{{ label }}</span>
-      <StatusBadge label="LIVE" tone="success" pulse />
+      <em class="metric-state">{{ severity === 'normal' ? 'normal' : severity }}</em>
     </div>
     <strong>{{ value }}</strong>
     <p>{{ detail }}</p>

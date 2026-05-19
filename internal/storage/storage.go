@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"errors"
+	"os"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -11,7 +12,8 @@ import (
 )
 
 type Store struct {
-	db *sql.DB
+	db             *sql.DB
+	retentionHours int
 }
 
 type MetricSample struct {
@@ -37,7 +39,7 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	store := &Store{db: db}
+	store := &Store{db: db, retentionHours: 24}
 	if err := store.Migrate(); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -50,6 +52,16 @@ func (s *Store) Close() error {
 		return nil
 	}
 	return s.db.Close()
+}
+
+func (s *Store) SetRetentionHours(hours int) {
+	if s == nil {
+		return
+	}
+	if hours < 1 {
+		hours = 24
+	}
+	s.retentionHours = hours
 }
 
 func (s *Store) Migrate() error {
@@ -66,7 +78,41 @@ CREATE TABLE IF NOT EXISTS metric_samples (
   disk_percent REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_metric_samples_timestamp ON metric_samples(timestamp);
+CREATE TABLE IF NOT EXISTS ui_state (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `)
+	return err
+}
+
+func (s *Store) GetUIState(key string) (string, bool, error) {
+	if s == nil {
+		return "", false, errors.New("storage is not configured")
+	}
+	var value string
+	err := s.db.QueryRow("SELECT value FROM ui_state WHERE key = ?", key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return value, true, nil
+}
+
+func (s *Store) SaveUIState(key string, value string) error {
+	if s == nil {
+		return errors.New("storage is not configured")
+	}
+	_, err := s.db.Exec(`
+INSERT INTO ui_state (key, value, updated_at) VALUES (?, ?, ?)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		key,
+		value,
+		time.Now().Format(time.RFC3339Nano),
+	)
 	return err
 }
 
@@ -90,7 +136,8 @@ INSERT INTO metric_samples (
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("DELETE FROM metric_samples WHERE timestamp < ?", time.Now().Add(-24*time.Hour).Format(time.RFC3339Nano))
+	retention := time.Duration(s.retentionHours) * time.Hour
+	_, err = s.db.Exec("DELETE FROM metric_samples WHERE timestamp < ?", time.Now().Add(-retention).Format(time.RFC3339Nano))
 	return err
 }
 
@@ -203,4 +250,21 @@ FROM metric_samples ORDER BY timestamp DESC LIMIT ?`, limit)
 		samples[len(reversed)-1-i] = reversed[i]
 	}
 	return samples, nil
+}
+
+func (s *Store) Stats(path string) (map[string]any, error) {
+	stats := map[string]any{}
+	var count int
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM metric_samples").Scan(&count); err != nil {
+		return nil, err
+	}
+	stats["sample_count"] = count
+	if info, err := os.Stat(path); err == nil {
+		stats["database_size_bytes"] = info.Size()
+	}
+	var oldest, newest string
+	_ = s.db.QueryRow("SELECT COALESCE(MIN(timestamp), ''), COALESCE(MAX(timestamp), '') FROM metric_samples").Scan(&oldest, &newest)
+	stats["oldest_sample"] = oldest
+	stats["newest_sample"] = newest
+	return stats, nil
 }

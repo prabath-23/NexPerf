@@ -19,6 +19,12 @@ func New(store *storage.Store, logger *log.Logger) *Monitor {
 	return &Monitor{store: store, interval: 5 * time.Second, logger: logger}
 }
 
+func (m *Monitor) SetInterval(interval time.Duration) {
+	if interval > 0 {
+		m.interval = interval
+	}
+}
+
 func (m *Monitor) Run(ctx context.Context) {
 	m.collectOnce()
 	ticker := time.NewTicker(m.interval)

@@ -1,8 +1,8 @@
 # NexPerf
 
-NexPerf is a local-first observability and system intelligence tool for developer machines. It provides a CLI-first workflow, a local Go API service, SQLite-backed historical metrics, and a Vue dashboard served at `http://127.0.0.1:8756/nexperf`.
+NexPerf is a local-first observability and system intelligence tool for workstations. It provides a CLI-first workflow, a local Go API service, SQLite-backed historical metrics, configurable collectors, filesystem intelligence, and a Vue workspace dashboard served at `http://127.0.0.1:8756/nexperf`.
 
-v0.2.0 turns the prototype dashboard into the foundation of a real local monitoring service.
+v0.3.0 evolves NexPerf from a polished local monitoring dashboard into the foundation of a configurable workstation observability platform.
 
 ## Philosophy
 
@@ -10,6 +10,7 @@ v0.2.0 turns the prototype dashboard into the foundation of a real local monitor
 - Terminal workflows before dashboard ceremony
 - Observability UX over toy charts
 - Reusable collectors, insight rules, APIs, and frontend components
+- Explainable local intelligence for processes, storage, and system pressure
 - A path toward privileged diagnostics without enabling them by default
 
 ## Architecture
@@ -33,8 +34,10 @@ cmd/nexperf         CLI entrypoint
 internal/cli       command routing and terminal output
 internal/service   lifecycle helpers and background service controls
 internal/collector system and process collectors
+internal/config    TOML configuration loading and validation
 internal/monitor   5-second historical collection loop
 internal/storage   SQLite persistence
+internal/storageintel filesystem and storage artifact analysis
 internal/insight   rule-based contextual insights
 internal/server    local API and Vue asset serving
 internal/platform  OS-specific helpers
@@ -69,6 +72,9 @@ nexperf inspect
 nexperf explain memory
 nexperf explain cpu
 nexperf explain disk
+nexperf explain storage
+nexperf explain processes
+nexperf manual storage
 nexperf version
 ```
 
@@ -116,10 +122,18 @@ Endpoints:
 - `GET /api/health`
 - `GET /api/system`
 - `GET /api/processes/top`
+- `GET /api/processes/detail?pid=<pid>`
+- `GET /api/processes/tree`
 - `GET /api/insights`
+- `GET /api/health-score`
 - `GET /api/history/cpu`
 - `GET /api/history/memory`
 - `GET /api/history/disk`
+- `GET /api/storage/summary`
+- `GET /api/config`
+- `GET /api/config/modes`
+- `PUT /api/config`
+- `GET /api/nexperf`
 - `GET /nexperf`
 
 Example:
@@ -127,19 +141,25 @@ Example:
 ```sh
 curl http://127.0.0.1:8756/api/system
 curl http://127.0.0.1:8756/api/history/cpu
+curl http://127.0.0.1:8756/api/storage/summary
+curl http://127.0.0.1:8756/api/nexperf
 ```
 
 ## Dashboard
 
 Vue is the primary dashboard. Go owns APIs and serves the production Vue build from `web/dist` at `/nexperf`.
 
-The dashboard includes:
+The dashboard workspace includes:
 
 - live CPU, memory, and disk cards
 - historical sparklines
 - CPU, memory, and disk timeline charts
 - process search, sorting, live updates, and CPU highlighting
+- process categories, ancestry, threads, and runtime metadata
+- storage intelligence for large folders, caches, dependencies, and build artifacts
 - categorized insights with timestamps and recommendations
+- NexPerf self-observability for database size, samples, runtime overhead, and API timings
+- settings for polling, retention, refresh, storage limits, and thresholds
 - live badge, polling state, and last updated time
 
 The frontend component system lives under:
@@ -147,6 +167,7 @@ The frontend component system lives under:
 ```txt
 web/src/components/ui
 web/src/components/charts
+web/src/components/navigation
 web/src/components/metrics
 web/src/components/processes
 web/src/components/insights
@@ -156,6 +177,27 @@ web/src/composables
 web/src/services
 web/src/stores
 ```
+
+## Configuration
+
+NexPerf reads TOML configuration from:
+
+```txt
+/etc/nexperf/config.toml
+~/.config/nexperf/config.toml
+```
+
+Supported settings include polling interval, retention hours, dashboard refresh rate, enabled collectors, storage scan limits, observation windows, usage mode, and insight thresholds. The Settings section can edit and save the user-level config.
+
+## Branding Assets
+
+NexPerf uses a compact thunderbolt-inspired `N` mark, JetBrains Mono typography, and a generated favicon system:
+
+```sh
+npm --prefix web run favicons
+```
+
+The production dashboard includes `favicon.ico`, `favicon.svg`, and an Apple touch icon path.
 
 ## Development Workflow
 
@@ -169,6 +211,7 @@ Run the Vue dev server:
 
 ```sh
 npm --prefix web install
+npm --prefix web run favicons
 npm --prefix web run dev
 ```
 
@@ -179,6 +222,7 @@ Vite proxies `/api` to `http://127.0.0.1:8756`.
 Build Vue:
 
 ```sh
+npm --prefix web run favicons
 npm --prefix web run build
 ```
 
@@ -199,7 +243,7 @@ If `web/dist` is missing, Go serves a small fallback status page instead of dupl
 
 ## Screenshots
 
-Screenshots are not checked into v0.2.0 yet. After starting NexPerf, capture the local dashboard at:
+Screenshots are not checked into v0.3.0 yet. After starting NexPerf, capture the local dashboard at:
 
 ```txt
 http://127.0.0.1:8756/nexperf
@@ -208,7 +252,8 @@ http://127.0.0.1:8756/nexperf
 ## Roadmap
 
 - Embed Vue assets into the Go binary
-- Add richer process diagnostics
+- Add richer process trees and per-process drilldowns
+- Add deeper filesystem growth tracking
 - Add network, ports, and local service visibility
 - Add swap and scheduling explainers
 - Add anomaly detection over historical data

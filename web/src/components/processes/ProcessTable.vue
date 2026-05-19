@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import DataTable from '../ui/DataTable.vue'
+import SelectControl from '../ui/SelectControl.vue'
 
 const props = defineProps({
   processes: { type: Array, default: () => [] },
@@ -11,9 +12,14 @@ const props = defineProps({
 const emit = defineEmits(['update:limit'])
 
 const query = ref('')
+const activeCategory = ref('')
 const sortKey = ref('memory_mb')
 const sortDir = ref('desc')
-const limitOptions = [8, 12, 20, 40, 80]
+const limitOptions = [
+  { label: '40', value: 40 },
+  { label: '80', value: 80 },
+  { label: 'All', value: 500 }
+]
 
 const columns = [
   { key: 'pid', label: 'PID', sortable: true },
@@ -27,8 +33,9 @@ const columns = [
 const categorySummary = computed(() => {
   const map = new Map()
   for (const process of props.processes) {
-    const category = process.category || 'app'
-    const current = map.get(category) || { category, count: 0, memory: 0, cpu: 0 }
+    const category = process.category || 'application'
+    const label = process.category_label || category
+    const current = map.get(category) || { category, label, count: 0, memory: 0, cpu: 0 }
     current.count += 1
     current.memory += Number(process.memory_mb || 0)
     current.cpu += Number(process.cpu_percent || 0)
@@ -43,9 +50,11 @@ const maxMemory = computed(() => Math.max(1, ...props.processes.map((process) =>
 
 const filtered = computed(() => {
   const needle = query.value.toLowerCase().trim()
-  const rows = needle
-    ? props.processes.filter((process) => `${process.pid} ${process.name} ${process.user || ''}`.toLowerCase().includes(needle))
-    : [...props.processes]
+  const rows = props.processes.filter((process) => {
+    if (activeCategory.value && process.category !== activeCategory.value) return false
+    if (!needle) return true
+    return `${process.pid} ${process.name} ${process.user || ''} ${process.category || ''} ${process.category_label || ''}`.toLowerCase().includes(needle)
+  })
   rows.sort((a, b) => {
     const av = a[sortKey.value]
     const bv = b[sortKey.value]
@@ -78,6 +87,10 @@ function trendFor(process) {
   if (memoryDelta < -20) return { label: `mem ${memoryDelta.toFixed(0)} MB`, tone: 'down' }
   return { label: 'steady', tone: 'flat' }
 }
+
+function toggleCategory(category) {
+  activeCategory.value = activeCategory.value === category ? '' : category
+}
 </script>
 
 <template>
@@ -90,26 +103,39 @@ function trendFor(process) {
       <div class="process-controls">
         <label>
           Show
-          <select :value="limit" @change="emit('update:limit', Number($event.target.value))">
-            <option v-for="option in limitOptions" :key="option" :value="option">{{ option }}</option>
-          </select>
+          <SelectControl
+            :model-value="limit"
+            :options="limitOptions"
+            aria-label="Process row limit"
+            @update:model-value="emit('update:limit', Number($event))"
+          />
         </label>
         <input v-model="query" type="search" placeholder="Search processes" />
       </div>
     </div>
     <div class="process-categories">
-      <div v-for="item in categorySummary" :key="item.category">
-        <span>{{ item.category }}</span>
+      <button
+        v-for="item in categorySummary"
+        :key="item.category"
+        type="button"
+        :class="{ active: activeCategory === item.category }"
+        @click="toggleCategory(item.category)"
+      >
+        <span>{{ item.label }}</span>
         <strong>{{ item.count }}</strong>
         <small>{{ item.memory.toFixed(0) }} MB</small>
-      </div>
+      </button>
     </div>
     <div class="table-wrap">
       <DataTable :columns="columns" :rows="filtered" :sort-key="sortKey" :sort-dir="sortDir" @sort="sort">
         <tr v-for="process in filtered" :key="process.pid" :class="{ hot: process.cpu_percent > 20 }">
           <td>{{ process.pid }}</td>
           <td>{{ process.name }}</td>
-          <td><span class="category-pill">{{ process.category || 'app' }}</span></td>
+          <td>
+            <span class="category-pill" :title="process.category_reason || process.category_label">
+              {{ process.category_label || process.category || 'Application' }}
+            </span>
+          </td>
           <td>
             <div class="memory-cell">
               <span>{{ process.memory_mb.toFixed(1) }} MB</span>
