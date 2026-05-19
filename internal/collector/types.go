@@ -25,10 +25,16 @@ type SystemSummary struct {
 }
 
 type ProcessInfo struct {
-	PID        int32   `json:"pid"`
-	Name       string  `json:"name"`
-	MemoryMB   float64 `json:"memory_mb"`
-	CPUPercent float64 `json:"cpu_percent,omitempty"`
-	User       string  `json:"user,omitempty"`
-	Category   string  `json:"category"`
+	PID            int32   `json:"pid"`
+	PPID           int32   `json:"ppid,omitempty"`
+	Name           string  `json:"name"`
+	MemoryMB       float64 `json:"memory_mb"`
+	CPUPercent     float64 `json:"cpu_percent,omitempty"`
+	User           string  `json:"user,omitempty"`
+	Category       string  `json:"category"`
+	CategoryLabel  string  `json:"category_label,omitempty"`
+	CategoryReason string  `json:"category_reason,omitempty"`
+	Threads        int32   `json:"threads,omitempty"`
+	CreateTime     int64   `json:"create_time,omitempty"`
+	Runtime        string  `json:"runtime,omitempty"`
 }

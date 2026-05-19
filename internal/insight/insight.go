@@ -20,15 +20,25 @@ type Insight struct {
 	Timestamp      time.Time `json:"timestamp"`
 }
 
+type Thresholds struct {
+	CPUWarning    float64
+	MemoryWarning float64
+	DiskWarning   float64
+}
+
 func Generate(system collector.SystemSummary) []Insight {
 	return GenerateContextual(system, nil, nil)
 }
 
 func GenerateContextual(system collector.SystemSummary, processes []collector.ProcessInfo, history []storage.MetricSample) []Insight {
+	return GenerateWithThresholds(system, processes, history, Thresholds{CPUWarning: 80, MemoryWarning: 80, DiskWarning: 80})
+}
+
+func GenerateWithThresholds(system collector.SystemSummary, processes []collector.ProcessInfo, history []storage.MetricSample, thresholds Thresholds) []Insight {
 	insights := []Insight{}
 	now := time.Now()
 
-	if system.Memory.Percent > 80 {
+	if system.Memory.Percent > thresholds.MemoryWarning {
 		processHint := memoryProcessHint(processes)
 		insights = append(insights, Insight{
 			ID:             "memory-high",
@@ -42,7 +52,7 @@ func GenerateContextual(system collector.SystemSummary, processes []collector.Pr
 		})
 	}
 
-	if system.Disk.Percent > 80 {
+	if system.Disk.Percent > thresholds.DiskWarning {
 		insights = append(insights, Insight{
 			ID:             "disk-high",
 			Severity:       severity(system.Disk.Percent),
@@ -55,20 +65,20 @@ func GenerateContextual(system collector.SystemSummary, processes []collector.Pr
 		})
 	}
 
-	if system.CPUPercent > 80 {
+	if system.CPUPercent > thresholds.CPUWarning {
 		insights = append(insights, Insight{
 			ID:             "cpu-high",
 			Severity:       severity(system.CPUPercent),
 			Category:       "Performance",
 			Score:          score(system.CPUPercent, 30),
 			Title:          "High CPU usage",
-			Message:        fmt.Sprintf("CPU usage is %.1f%%, which may make local development tools feel sluggish.", system.CPUPercent),
-			Recommendation: "Inspect active workloads and wait for expected build, indexing, or container activity to complete.",
+			Message:        fmt.Sprintf("CPU usage is %.1f%%, which may make active workstation apps feel sluggish.", system.CPUPercent),
+			Recommendation: "Inspect active workloads and wait for expected rendering, indexing, sync, backup, or compute activity to complete.",
 			Timestamp:      now,
 		})
 	}
 
-	if sustainedCPU(history) {
+	if sustainedCPU(history, thresholds.CPUWarning) {
 		insights = append(insights, Insight{
 			ID:             "cpu-sustained",
 			Severity:       "warning",
@@ -81,8 +91,8 @@ func GenerateContextual(system collector.SystemSummary, processes []collector.Pr
 		})
 	}
 
-	if sustainedMemory(history) {
-		duration := sustainedDuration(history, func(sample storage.MetricSample) float64 { return sample.MemoryPct }, 80)
+	if sustainedMemory(history, thresholds.MemoryWarning) {
+		duration := sustainedDuration(history, func(sample storage.MetricSample) float64 { return sample.MemoryPct }, thresholds.MemoryWarning)
 		insights = append(insights, Insight{
 			ID:             "memory-sustained",
 			Severity:       "warning",
@@ -90,7 +100,7 @@ func GenerateContextual(system collector.SystemSummary, processes []collector.Pr
 			Score:          30,
 			Title:          "Memory pressure is persistent",
 			Message:        fmt.Sprintf("Memory pressure has remained above 80%% for roughly %s across recent samples.", duration),
-			Recommendation: "Review browsers, IDE helpers, and background services before starting memory-heavy work.",
+			Recommendation: "Review browsers, creative apps, collaboration tools, and background services before starting memory-heavy work.",
 			Timestamp:      now,
 		})
 	}
@@ -148,13 +158,13 @@ func score(percent float64, max int) int {
 	return value
 }
 
-func sustainedCPU(history []storage.MetricSample) bool {
+func sustainedCPU(history []storage.MetricSample, threshold float64) bool {
 	if len(history) < 3 {
 		return false
 	}
 	count := 0
 	for i := len(history) - 1; i >= 0 && count < 6; i-- {
-		if history[i].CPUPercent <= 80 {
+		if history[i].CPUPercent <= threshold {
 			return false
 		}
 		count++
@@ -162,8 +172,8 @@ func sustainedCPU(history []storage.MetricSample) bool {
 	return count >= 3
 }
 
-func sustainedMemory(history []storage.MetricSample) bool {
-	return sustainedDuration(history, func(sample storage.MetricSample) float64 { return sample.MemoryPct }, 80) != "0s"
+func sustainedMemory(history []storage.MetricSample, threshold float64) bool {
+	return sustainedDuration(history, func(sample storage.MetricSample) float64 { return sample.MemoryPct }, threshold) != "0s"
 }
 
 func sustainedDuration(history []storage.MetricSample, pick func(storage.MetricSample) float64, threshold float64) string {

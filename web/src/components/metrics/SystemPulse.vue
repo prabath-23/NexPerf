@@ -13,22 +13,29 @@ function tone(value) {
   if (value >= 80) return 'warning'
   return 'normal'
 }
+
+function scoreTone(score) {
+  const value = Number(score?.value ?? 100)
+  if (value < 50) return 'critical'
+  if (value < 75) return 'warning'
+  return 'normal'
+}
 </script>
 
 <template>
-  <section class="system-pulse" v-if="system">
+  <section class="system-pulse" :class="scoreTone(score)" v-if="system">
     <div class="pulse-copy">
-      <span>System Pulse</span>
+      <span>Runtime</span>
       <h2>{{ system.hostname || 'Local machine' }}</h2>
-      <p>{{ system.os }} / {{ system.arch }} · live resource signal</p>
+      <p>{{ system.os }} / {{ system.arch }} · workstation metrics</p>
     </div>
 
-    <div class="pulse-orb" aria-hidden="true">
+    <div class="pulse-orb" :class="scoreTone(score)" aria-hidden="true">
       <div class="orb-ring ring-one" />
       <div class="orb-ring ring-two" />
       <div class="orb-core">
         <strong>{{ score?.value ?? Math.round(100 - ((system.cpu_percent + system.memory.percent + system.disk.percent) / 3) / 2) }}</strong>
-        <span>health</span>
+        <span>score</span>
       </div>
     </div>
 

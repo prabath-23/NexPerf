@@ -6,15 +6,21 @@ defineProps({
 
 <template>
   <article class="insight-card" :class="insight.severity">
-    <div>
-      <span>{{ insight.category }} · {{ insight.state || 'active' }}</span>
-      <time>{{ new Date(insight.timestamp).toLocaleTimeString() }}</time>
+    <span class="insight-rail" aria-hidden="true"></span>
+    <div class="insight-body">
+      <div class="insight-meta">
+        <span>{{ insight.category }}</span>
+        <time>{{ new Date(insight.timestamp).toLocaleTimeString() }}</time>
+      </div>
+      <div class="insight-main">
+        <strong>{{ insight.title }}</strong>
+        <em v-if="insight.score">score {{ insight.score }}</em>
+      </div>
+      <p>{{ insight.message }}</p>
+      <footer>
+        <span>Recommendation</span>
+        {{ insight.recommendation }}
+      </footer>
     </div>
-    <strong>{{ insight.title }}</strong>
-    <p>{{ insight.message }}</p>
-    <footer>
-      <span>{{ insight.recommendation }}</span>
-      <em v-if="insight.score">score {{ insight.score }}</em>
-    </footer>
   </article>
 </template>

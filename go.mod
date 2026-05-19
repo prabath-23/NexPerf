@@ -6,6 +6,8 @@ require github.com/shirou/gopsutil/v4 v4.24.12
 
 require modernc.org/sqlite v1.34.4
 
+require github.com/pelletier/go-toml/v2 v2.2.3
+
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.8.1 // indirect
